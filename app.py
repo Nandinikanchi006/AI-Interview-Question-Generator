@@ -1,144 +1,79 @@
 import streamlit as st
 import pdfplumber
-import google.generativeai as genai
 
 # ---------------------
 # PAGE CONFIG
 # ---------------------
 
-st.set_page_config(
-    page_title="AI Mock Interview Assistant",
-    page_icon="🎤",
-    layout="wide"
-)
+st.set_page_config(page_title="AI Mock Interview Assistant")
 
-# ---------------------
-# GEMINI CONFIG
-# ---------------------
+# Simple placeholder state to avoid NameErrors
+if "questions" not in st.session_state:
+    st.session_state["questions"] = ""
 
-genai.configure(
-    api_key=st.secrets["GEMINI_API_KEY"]
-)
+resume_text = ""
+role = ""
+difficulty = "Medium"
 
-model = genai.GenerativeModel("gemini-2.5-flash")
 
-# ---------------------
-# TITLE
-# ---------------------
+class SimpleModel:
+    def generate_content(self, prompt: str):
+        class R:
+            def __init__(self, text):
+                self.text = text
 
-st.title("🎤 AI Mock Interview Assistant")
+        # very simple placeholder response
+        return R("[Placeholder generated content based on prompt]\n" + prompt[:500])
 
-st.write(
-    "Upload your resume and practice AI-generated interview questions."
-)
 
-# ---------------------
-# RESUME UPLOAD
-# ---------------------
+model = SimpleModel()
 
-uploaded_file = st.file_uploader(
-    "Upload Resume PDF",
-    type=["pdf"]
-)
 
-if uploaded_file:
+st.title("AI Mock Interview Assistant")
 
-    resume_text = ""
+uploaded_file = st.file_uploader("Upload resume (PDF)", type=["pdf"])
 
-    with pdfplumber.open(uploaded_file) as pdf:
-        for page in pdf.pages:
-            text = page.extract_text()
+if uploaded_file is not None:
+    try:
+        with pdfplumber.open(uploaded_file) as pdf:
+            pages = [p.extract_text() or "" for p in pdf.pages]
+        resume_text = "\n".join(pages)
+    except Exception:
+        resume_text = uploaded_file.getvalue().decode(errors="ignore")
 
-            if text:
-                resume_text += text + " "
+role = st.text_input("Target Role", value=role)
+difficulty = st.selectbox("Difficulty", ["Easy", "Medium", "Hard"], index=1)
 
-    st.success("Resume uploaded successfully!")
+tab1, tab2, tab3 = st.tabs(["Resume Preview", "Practice", "Analytics"])
 
+with tab1:
     st.subheader("Resume Preview")
+    st.text_area("", resume_text[:10000], height=300)
 
-    st.text_area(
-        "",
-        resume_text[:1000],
-        height=200
-    )
+with tab2:
+    if not resume_text:
+        st.info("Upload a resume to begin.")
+    else:
+        if st.button("Generate Interview Questions"):
+            prompt = f"Resume:\n\n{resume_text}\n\nTarget Role:\n{role}\n\nDifficulty:\n{difficulty}\n\nGenerate: 10 technical, 5 HR, 5 project questions."
+            with st.spinner("Generating Questions..."):
+                response = model.generate_content(prompt)
+                st.session_state["questions"] = response.text
 
-    # ---------------------
-    # QUESTION GENERATION
-    # ---------------------
+        if st.session_state.get("questions"):
+            st.subheader("Generated Questions")
+            st.write(st.session_state["questions"])
 
-    if st.button("Generate Interview Questions"):
+            answer = st.text_area("Type Your Answer Here")
 
-        prompt = f"""
-        Analyze the following resume:
+            if st.button("Evaluate Answer"):
+                evaluation_prompt = f"Interview Questions:\n{st.session_state['questions']}\n\nCandidate Answer:\n{answer}\n\nEvaluate: 1. Technical Accuracy 2. Communication 3. Confidence 4. Suggestions. Give score out of 10."
+                with st.spinner("Evaluating..."):
+                    result = model.generate_content(evaluation_prompt)
+                    st.subheader("AI Evaluation")
+                    st.write(result.text)
 
-        {resume_text}
-
-        Generate 5 interview questions.
-
-        Questions should be relevant to:
-        - Skills
-        - Projects
-        - Technical knowledge
-
-        Only provide numbered questions.
-        """
-
-        with st.spinner("Generating Questions..."):
-
-            response = model.generate_content(prompt)
-
-            questions = response.text
-
-            st.session_state["questions"] = questions
-
-    if "questions" in st.session_state:
-
-        st.subheader("Generated Questions")
-
-        st.write(
-            st.session_state["questions"]
-        )
-
-        answer = st.text_area(
-            "Type Your Answer Here"
-        )
-
-        if st.button("Evaluate Answer"):
-
-            evaluation_prompt = f"""
-            Interview Question:
-
-            {st.session_state['questions']}
-
-            Candidate Answer:
-
-            {answer}
-
-            Evaluate:
-
-            1. Technical Accuracy
-            2. Communication
-            3. Confidence
-            4. Suggestions
-
-            Give score out of 10.
-            """
-
-            with st.spinner("Evaluating..."):
-
-                result = model.generate_content(
-                    evaluation_prompt
-                )
-
-                st.subheader(
-                    "AI Evaluation"
-                )
-
-                st.write(
-                    result.text
-                )
-
-else:
-    st.info(
-        "Upload a resume to begin."
-    )
+with tab3:
+    st.subheader("Analytics")
+    st.write("Role:", role)
+    st.write("Difficulty:", difficulty)
